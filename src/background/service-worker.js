@@ -1,51 +1,15 @@
-import { OFFSCREEN_DOCUMENT_PATH, DEFAULT_SENTENCES_PER_CHUNK } from '../config/constants.js';
+import { DEFAULT_SENTENCES_PER_CHUNK } from '../config/constants.js';
 import { StateManager } from '../core/state-manager.js';
 import { AudioCache } from '../core/audio-cache.js';
 import { generateAudio } from '../api/openai-client.js';
 import { chunkTextBySentences } from '../utils/text-chunker.js';
 
-let creating;
 let prefetchAbortController = new AbortController();
-let offscreenReady = null;
-let resolveOffscreenReady = null;
 let currentPlaybackOperationId = 0;
 let prefetchInProgress = new Set();
 
 const stateManager = new StateManager();
 const audioCache = new AudioCache();
-
-function resetOffscreenReady() {
-  offscreenReady = new Promise(resolve => {
-    resolveOffscreenReady = resolve;
-  });
-}
-
-resetOffscreenReady();
-
-async function setupOffscreenDocument() {
-  const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
-  const existingContexts = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
-    documentUrls: [offscreenUrl]
-  });
-
-  if (existingContexts.length > 0) return;
-
-  if (creating) {
-    await creating;
-  } else {
-    resetOffscreenReady();
-    creating = chrome.offscreen.createDocument({
-      url: OFFSCREEN_DOCUMENT_PATH,
-      reasons: ['AUDIO_PLAYBACK'],
-      justification: 'Playing TTS audio in background'
-    });
-    await creating;
-    creating = null;
-  }
-
-  await offscreenReady;
-}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
@@ -103,13 +67,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'chunkFinished':
       handleChunkFinished();
-      return false;
-
-    case 'offscreenReady':
-      if (resolveOffscreenReady) {
-        resolveOffscreenReady();
-        resolveOffscreenReady = null;
-      }
       return false;
 
     case 'resumeReading':
@@ -244,15 +201,14 @@ async function playNextChunk(operationId) {
 
     prefetchAdjacentChunks(currentIndex);
 
-    await setupOffscreenDocument();
-    const result = await sendToOffscreen({
+    const result = await chrome.tabs.sendMessage(state.tabId, {
       action: 'playAudio',
       operationId,
       data: { audioData: Array.from(new Uint8Array(audioData)) }
     });
 
-    if (!result.success) {
-      throw new Error(result.error || 'Playback failed');
+    if (!result || !result.success) {
+      throw new Error(result?.error || 'Playback failed');
     }
 
   } catch (error) {
@@ -312,6 +268,8 @@ function handleChunkFinished() {
 }
 
 async function handleStop() {
+  const state = stateManager.getState();
+
   stateManager.stop();
 
   currentPlaybackOperationId++;
@@ -323,27 +281,45 @@ async function handleStop() {
   prefetchInProgress.clear();
 
   await clearHighlight();
-  await sendToOffscreen({ action: 'stop' });
+
+  if (state.tabId) {
+    chrome.tabs.sendMessage(state.tabId, { action: 'stop' }).catch(() => {});
+  }
 
   notifyStateChange();
 }
 
 async function handlePause() {
+  const state = stateManager.getState();
+
   stateManager.pause();
-  await sendToOffscreen({ action: 'pause' });
+
+  if (state.tabId) {
+    await chrome.tabs.sendMessage(state.tabId, { action: 'pause' });
+  }
+
   notifyStateChange();
 }
 
 async function handleResume() {
+  const state = stateManager.getState();
+
   stateManager.resume();
-  await sendToOffscreen({ action: 'resume' });
+
+  if (state.tabId) {
+    await chrome.tabs.sendMessage(state.tabId, { action: 'resume' });
+  }
+
   notifyStateChange();
 }
 
 async function handlePreviousChunk() {
   if (!stateManager.canGoPrevious()) return;
 
-  sendToOffscreen({ action: 'stop' }).catch(() => {});
+  const state = stateManager.getState();
+  if (state.tabId) {
+    chrome.tabs.sendMessage(state.tabId, { action: 'stop' }).catch(() => {});
+  }
 
   stateManager.previousChunk();
 
@@ -354,33 +330,15 @@ async function handlePreviousChunk() {
 async function handleNextChunk() {
   if (!stateManager.canGoNext()) return;
 
-  sendToOffscreen({ action: 'stop' }).catch(() => {});
+  const state = stateManager.getState();
+  if (state.tabId) {
+    chrome.tabs.sendMessage(state.tabId, { action: 'stop' }).catch(() => {});
+  }
 
   stateManager.nextChunk();
 
   const operationId = ++currentPlaybackOperationId;
   await playNextChunk(operationId);
-}
-
-async function sendToOffscreen(message) {
-  await setupOffscreenDocument();
-
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      resolve({ success: false, error: 'Timeout' });
-    }, 10000);
-
-    chrome.runtime.sendMessage(message, response => {
-      clearTimeout(timeout);
-
-      if (chrome.runtime.lastError) {
-        resolve({ success: false, error: chrome.runtime.lastError.message });
-        return;
-      }
-
-      resolve(response || { success: true });
-    });
-  });
 }
 
 async function handleResumeReading() {
