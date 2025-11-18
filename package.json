@@ -1,0 +1,20 @@
+{
+  "name": "text-to-voice-extension",
+  "version": "1.0.0",
+  "description": "Browser extension to read web pages aloud using OpenAI TTS",
+  "type": "module",
+  "scripts": {
+    "generate-icons": "node scripts/generate-icons.js",
+    "test": "node tests/test-text-chunker.js && node tests/test-text-processor.js && node tests/test-audio-cache.js"
+  },
+  "keywords": [
+    "text-to-speech",
+    "tts",
+    "openai",
+    "browser-extension",
+    "accessibility"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {}
+}

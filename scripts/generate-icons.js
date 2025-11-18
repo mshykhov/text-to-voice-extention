@@ -1,0 +1,33 @@
+/**
+ * Simple PNG icon generator using Canvas (Node.js)
+ * Creates placeholder PNG icons from base design
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// Base64 encoded minimal PNG icons (created manually)
+const icons = {
+  '16': 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAADzSURBVDiNpdM7DoJAEAbgb7GCBL2CpbGz8woeQROvYGPlCbyBN/AEegJvYOcJqKyMhY2FiYUP2MVAeCSG+ZPJl9nZnUmAP0YDdEEfnTAa4IQsckjhgCTaaI82ssgghQOSiKKJJppooI4aKiijhBJKqKCKGhqoo4Em2jhgDxcuLBgxYcaMBSvWv2vKDj52fMVDOMdTPMWPiIs4iYtQERdxEhdxEVdxE3fh4Sme4imeQuEtnuIt3kLhK77iK75C4Sd+4id+4g9M+Is/cRAn/sVJXMRVfMNDPMVTPIXCRzzFU9zFXdzEVVzERVzFTdzFXbzAC7zAG7wXgNn4AV+pPEw3gNsMAAAAAElFTkSuQmCC',
+  '48': 'iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAA3QAAAN0BcFOiBwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAKISURBVGiB7Zq9TxRBGMZ/uyfHfYggxMTEGBISCwsLrYw0FvyFVhZ2dhZ2dhYWdjYWVhb+BRYmFhZaGBMTEhISEhMTE/lQ+Tg4bvfmteDuuLu9vb3bO+DikyzeZN/ZZ56Zd2ZnB/7XfwqR2gBdoANcBi4BUaAG1IBqG/0MqABloASUgCJQAApAAcgB+8BeexcVQ0QJuCEiH0WkLu1TVUQ+icgNETFMXEAspoF3QIuTUxN4C0yb2OcMgZvAOu6Dt1gH5k3seB+gCHx2GdxiCvgC7AEZYK6j/gMwC2S69ssCX4FFU5s6AzhsM/gdYLlHn+U2xgHwz8TGTut0gc9OY3SAZaBfn/4qsNJm7HPbPs5r8vYBboF/gBSwCtwD7u49AT4Bqa46C9iwr/vA77b69yYX6A44CswAj4B5e7sfEe4DM/a+Hxn+Ai/a7DF7nVHgsbuvGQJ/gNtABPgIrAEPgQx94/jYfs0ADWA1ItSBGWDRxFYT5/kIPAceAIngPgC40VbeBp6cYP9zwLO2NrdNbDSx0hLwAngOpIMPD0CyrfwWGA057nNgqc1G0sRW0w1IAW+AI+BVyLEBIm3lGhALOW40YqPWXjax1ZQCaeAtcAi8HmDsaFu51l42sdX0XGgBq8AhsBJi7BZ2M/sK+91J+AZ8B74Cv9rlHJAMKRWW28rHwPqA49+wyx82Zrqt/M3NJiME/gIXgT+4XweC0AAuAAf2NkZdaQAuAz+BS0O8I1pAGfhub2PUlToCtNp/wZAu0Kor9Y+1kxpAOqR9Z4b1Mw2agCswz//NOwXQsD1kDvsJHAE/2uUfti0DvgXj7Tz9r/8UPwH9nL23ndP/IwAAAABJRU5ErkJggg==',
+  '128': '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'
+};
+
+// Create icons directory if it doesn't exist
+const iconsDir = path.join(__dirname, '../icons');
+if (!fs.existsSync(iconsDir)) {
+  fs.mkdirSync(iconsDir, { recursive: true });
+}
+
+// Write PNG files
+Object.keys(icons).forEach(size => {
+  const filename = `icon${size}.png`;
+  const filepath = path.join(iconsDir, filename);
+  const buffer = Buffer.from(icons[size], 'base64');
+
+  fs.writeFileSync(filepath, buffer);
+  console.log(`Created ${filename}`);
+});
+
+console.log('\nAll icon files generated successfully!');
+console.log('Icons are basic placeholders - replace with professional designs before publishing.');
