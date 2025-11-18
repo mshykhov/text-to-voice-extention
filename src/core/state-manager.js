@@ -1,3 +1,5 @@
+import { validateSettings } from '../utils/validators.js';
+
 export class StateManager {
   constructor() {
     this.state = {
@@ -32,13 +34,18 @@ export class StateManager {
   }
 
   updateSettings(settings) {
+    const validation = validateSettings(settings);
+    if (!validation.valid) {
+      throw new Error(`Invalid settings: ${validation.errors.join(', ')}`);
+    }
     this.state.settings = { ...this.state.settings, ...settings };
   }
 
   startPlayback(data) {
     const { text, apiKey, voice, speed, tabId, chunks, positions, extractedTextOffset = 0 } = data;
 
-    this.state.settings = { apiKey, voice, speed };
+    this.updateSettings({ voice, speed });
+    this.state.settings.apiKey = apiKey;
     this.state.tabId = tabId;
     this.state.extractedText = text;
     this.state.extractedTextOffset = extractedTextOffset;

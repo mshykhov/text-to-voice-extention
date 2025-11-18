@@ -2,7 +2,7 @@ import { OFFSCREEN_DOCUMENT_PATH, DEFAULT_SENTENCES_PER_CHUNK } from '../config/
 import { StateManager } from '../core/state-manager.js';
 import { AudioCache } from '../core/audio-cache.js';
 import { generateAudio } from '../api/openai-client.js';
-import { chunkTextBySentences, findLogicalStart } from '../utils/text-chunker.js';
+import { chunkTextBySentences } from '../utils/text-chunker.js';
 
 let creating;
 let prefetchAbortController = new AbortController();
@@ -134,7 +134,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const state = stateManager.getState();
-  if (changeInfo.status === 'loading' && state.isPlaying && state.tabId === tabId) {
+  if (!state.isPlaying || state.tabId !== tabId) return;
+
+  const isNavigating = changeInfo.status === 'loading';
+  const urlChanged = changeInfo.url !== undefined;
+
+  if (isNavigating || urlChanged) {
+    console.log('[TTS] Tab navigation detected, stopping playback:', { tabId, urlChanged, newUrl: changeInfo.url });
     handleStop();
   }
 });
@@ -400,9 +406,8 @@ async function handleReadFromSelection(data) {
   let extractedText = text;
 
   if (selectionPosition !== null && selectionPosition !== undefined) {
-    const logicalStart = findLogicalStart(text, selectionPosition);
-    extractedText = text.substring(logicalStart);
-    extractedTextOffset = logicalStart;
+    extractedText = text.substring(selectionPosition);
+    extractedTextOffset = selectionPosition;
   }
 
   const { chunks, positions } = chunkTextBySentences(extractedText, { defaultSentences: DEFAULT_SENTENCES_PER_CHUNK });

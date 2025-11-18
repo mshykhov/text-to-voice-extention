@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.js",
-    "test": "node tests/test-text-chunker.js && node tests/test-text-processor.js && node tests/test-audio-cache.js"
+    "test": "node tests/test-text-chunker.js && node tests/test-text-processor.js && node tests/test-audio-cache.js && node tests/test-validators.js"
   },
   "keywords": [
     "text-to-speech",

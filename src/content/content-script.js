@@ -2,6 +2,7 @@ console.log('[TTS Content Script] Loaded on:', window.location.href);
 
 let currentHighlight = null;
 let pageContext = null;
+let contentObserver = null;
 
 injectHighlightStyles();
 
@@ -137,11 +138,34 @@ function buildPageContext() {
   pageContext = { contentElement, nodeMap, text };
   console.log('[TTS Content Script] Built page context:', { textLength: text.length, nodes: nodeMap.length });
 
+  setupContentObserver(contentElement);
+
   return pageContext;
 }
 
 function clearPageContext() {
+  if (contentObserver) {
+    contentObserver.disconnect();
+    contentObserver = null;
+  }
   pageContext = null;
+}
+
+function setupContentObserver(contentElement) {
+  if (contentObserver) {
+    contentObserver.disconnect();
+  }
+
+  contentObserver = new MutationObserver(() => {
+    console.log('[TTS Content Script] DOM changed, invalidating pageContext');
+    clearPageContext();
+  });
+
+  contentObserver.observe(contentElement, {
+    childList: true,
+    characterData: true,
+    subtree: true
+  });
 }
 
 function cleanText(text) {
