@@ -172,12 +172,13 @@ async function handleStartReading(data) {
   audioCache.clear();
   notifyStateChange();
 
-  await playNextChunk();
+  const operationId = ++currentPlaybackOperationId;
+  await playNextChunk(operationId);
 }
 
-async function playNextChunk(operationId = null) {
+async function playNextChunk(operationId) {
   const state = stateManager.getState();
-  if (!state.isPlaying) return;
+  if (!state.isPlaying || operationId !== currentPlaybackOperationId) return;
 
   if (state.currentChunkIndex >= state.chunks.length) {
     await handleStop();
@@ -194,12 +195,10 @@ async function playNextChunk(operationId = null) {
     if (audioCache.has(currentIndex)) {
       audioData = audioCache.get(currentIndex);
     } else {
-      if (operationId !== null && operationId !== currentPlaybackOperationId) return;
-
       const chunk = stateManager.getCurrentChunk();
       audioData = await generateAudio(chunk, state.settings);
 
-      if (operationId !== null && operationId !== currentPlaybackOperationId) return;
+      if (operationId !== currentPlaybackOperationId) return;
     }
 
     prefetchAdjacentChunks(currentIndex);
@@ -207,6 +206,7 @@ async function playNextChunk(operationId = null) {
     await setupOffscreenDocument();
     const result = await sendToOffscreen({
       action: 'playAudio',
+      operationId,
       data: { audioData: Array.from(new Uint8Array(audioData)) }
     });
 
@@ -267,7 +267,7 @@ function handleChunkFinished() {
   if (!state.isPlaying || state.isPaused) return;
 
   stateManager.nextChunk();
-  playNextChunk();
+  playNextChunk(currentPlaybackOperationId);
 }
 
 async function handleStop() {

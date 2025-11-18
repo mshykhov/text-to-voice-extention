@@ -1,12 +1,17 @@
 let currentAudio = null;
+let currentOperationId = 0;
 
 chrome.runtime.sendMessage({ action: 'offscreenReady' }).catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'playAudio') {
-    if (currentAudio) {
-      stopAudio();
+    if (message.operationId < currentOperationId) {
+      sendResponse({ success: false, error: 'Outdated' });
+      return false;
     }
+
+    currentOperationId = message.operationId;
+    if (currentAudio) stopAudio();
 
     playAudio(message.data.audioData)
       .then(() => sendResponse({ success: true }))
@@ -15,8 +20,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'stop') {
+    currentOperationId++;
     stopAudio();
-    sendResponse({ success: true, stopped: true });
+    sendResponse({ success: true });
     return false;
   }
 
