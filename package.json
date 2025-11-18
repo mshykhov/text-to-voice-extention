@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.js",
-    "test": "node tests/test-text-chunker.js && node tests/test-text-processor.js && node tests/test-audio-cache.js && node tests/test-validators.js"
+    "test": "node tests/test-text-chunker.js && node tests/test-text-processor.js && node tests/test-audio-cache.js && node tests/test-validators.js",
+    "package": "bash scripts/package-extension.sh",
+    "package:win": "scripts\\package-extension.bat"
   },
   "keywords": [
     "text-to-speech",
