@@ -1,8 +1,8 @@
-import { OFFSCREEN_DOCUMENT_PATH, DEFAULT_CHUNK_SIZE } from '../config/constants.js';
+import { OFFSCREEN_DOCUMENT_PATH, DEFAULT_SENTENCES_PER_CHUNK } from '../config/constants.js';
 import { StateManager } from '../core/state-manager.js';
 import { AudioCache } from '../core/audio-cache.js';
 import { generateAudio } from '../api/openai-client.js';
-import { chunkTextBySentences } from '../utils/text-chunker.js';
+import { chunkTextBySentences, findLogicalStart } from '../utils/text-chunker.js';
 
 let creating;
 let prefetchAbortController = new AbortController();
@@ -111,6 +111,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         resolveOffscreenReady = null;
       }
       return false;
+
+    case 'resumeReading':
+      handleResumeReading()
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ success: false, error: error.message }));
+      return true;
+
+    case 'readFromSelection':
+      handleReadFromSelection(message.data)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ success: false, error: error.message }));
+      return true;
+
+    case 'hasLastPosition':
+      sendResponse({ hasPosition: stateManager.hasLastPosition() });
+      return false;
   }
 
   return false;
@@ -146,6 +162,7 @@ async function highlightCurrentChunk() {
   chrome.tabs.sendMessage(state.tabId, {
     action: 'highlightText',
     extractedText: state.extractedText,
+    extractedTextOffset: state.extractedTextOffset,
     start: position.start,
     end: position.end
   }).catch(() => {});
@@ -160,19 +177,37 @@ async function clearHighlight() {
   }).catch(() => {});
 }
 
-async function handleStartReading(data) {
-  const { text, apiKey, voice, speed, tabId } = data;
-
+function validatePlaybackData(apiKey, text) {
   if (!apiKey) throw new Error('API key required');
   if (!text || text.length < 10) throw new Error('Not enough text');
+}
 
-  const { chunks, positions } = chunkTextBySentences(text, DEFAULT_CHUNK_SIZE);
-
-  stateManager.startPlayback({ text, apiKey, voice, speed, tabId, chunks, positions });
+function initializePlayback(chunks, positions, extractedText, extractedTextOffset, apiKey, voice, speed, tabId) {
+  stateManager.startPlayback({
+    text: extractedText,
+    apiKey,
+    voice,
+    speed,
+    tabId,
+    chunks,
+    positions,
+    extractedTextOffset
+  });
   audioCache.clear();
   notifyStateChange();
 
   const operationId = ++currentPlaybackOperationId;
+  return operationId;
+}
+
+async function handleStartReading(data) {
+  const { text, apiKey, voice, speed, tabId } = data;
+
+  validatePlaybackData(apiKey, text);
+
+  const { chunks, positions } = chunkTextBySentences(text, { defaultSentences: DEFAULT_SENTENCES_PER_CHUNK });
+  const operationId = initializePlayback(chunks, positions, text, 0, apiKey, voice, speed, tabId);
+
   await playNextChunk(operationId);
 }
 
@@ -341,3 +376,81 @@ async function sendToOffscreen(message) {
     });
   });
 }
+
+async function handleResumeReading() {
+  if (!stateManager.resumePlayback()) {
+    throw new Error('No saved position to resume from');
+  }
+
+  audioCache.clear();
+  notifyStateChange();
+
+  const operationId = ++currentPlaybackOperationId;
+  await playNextChunk(operationId);
+}
+
+async function handleReadFromSelection(data) {
+  const { selectionPosition, text, apiKey, voice, speed, tabId } = data;
+
+  validatePlaybackData(apiKey, text);
+
+  await handleStop();
+
+  let extractedTextOffset = 0;
+  let extractedText = text;
+
+  if (selectionPosition !== null && selectionPosition !== undefined) {
+    const logicalStart = findLogicalStart(text, selectionPosition);
+    extractedText = text.substring(logicalStart);
+    extractedTextOffset = logicalStart;
+  }
+
+  const { chunks, positions } = chunkTextBySentences(extractedText, { defaultSentences: DEFAULT_SENTENCES_PER_CHUNK });
+  const operationId = initializePlayback(chunks, positions, extractedText, extractedTextOffset, apiKey, voice, speed, tabId);
+
+  await playNextChunk(operationId);
+}
+
+async function handleContextMenuClick(info, tab) {
+  if (info.menuItemId !== 'read-from-here' || !info.selectionText) return;
+
+  try {
+    const [textResponse, positionResponse] = await Promise.all([
+      chrome.tabs.sendMessage(tab.id, { action: 'extractText' }),
+      chrome.tabs.sendMessage(tab.id, { action: 'getSelectionPosition' })
+    ]);
+
+    if (!textResponse?.success || !textResponse.text) {
+      console.error('Could not extract text');
+      return;
+    }
+
+    const settings = await chrome.storage.sync.get(['apiKey', 'voice', 'speed']);
+
+    if (!settings.apiKey) {
+      console.error('No API key found');
+      return;
+    }
+
+    await handleReadFromSelection({
+      selectionPosition: positionResponse?.position,
+      text: textResponse.text,
+      apiKey: settings.apiKey,
+      voice: settings.voice || 'alloy',
+      speed: settings.speed || 1.0,
+      tabId: tab.id
+    });
+  } catch (error) {
+    console.error('Read from selection error:', error);
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'read-from-here',
+    title: 'Read from here',
+    contexts: ['selection']
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(handleContextMenuClick);

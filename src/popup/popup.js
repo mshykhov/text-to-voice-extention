@@ -9,6 +9,7 @@ class TTSPopup {
     this.setupEventListeners();
     await this.loadApiKey();
     await this.loadSettings();
+    await this.checkLastPosition();
     this.requestStateUpdate();
   }
 
@@ -27,6 +28,7 @@ class TTSPopup {
       voiceSelect: document.getElementById('voice-select'),
       speedSelect: document.getElementById('speed-select'),
       startBtn: document.getElementById('start-btn'),
+      resumeReadingBtn: document.getElementById('resume-reading-btn'),
       pauseBtn: document.getElementById('pause-btn'),
       resumeBtn: document.getElementById('resume-btn'),
       stopBtn: document.getElementById('stop-btn'),
@@ -48,6 +50,7 @@ class TTSPopup {
       this.toggleSettingsMenu();
     });
     this.elements.startBtn.addEventListener('click', () => this.startReading());
+    this.elements.resumeReadingBtn.addEventListener('click', () => this.resumeReading());
     this.elements.pauseBtn.addEventListener('click', () => this.pause());
     this.elements.resumeBtn.addEventListener('click', () => this.resume());
     this.elements.stopBtn.addEventListener('click', () => this.stop());
@@ -222,6 +225,7 @@ class TTSPopup {
     }
 
     this.updateStatusIndicator(isPlaying, isPaused);
+    this.checkLastPosition(isPlaying);
   }
 
   updateStatusIndicator(isPlaying, isPaused) {
@@ -289,6 +293,8 @@ class TTSPopup {
         throw new Error(startResponse?.error || 'Failed to start reading');
       }
 
+      await this.checkLastPosition();
+
     } catch (error) {
       console.error('Start reading error:', error);
       this.showError(error.message);
@@ -332,6 +338,46 @@ class TTSPopup {
   clearMessages() {
     this.elements.errorMessage.classList.add('hidden');
     this.elements.successMessage.classList.add('hidden');
+  }
+
+  async checkLastPosition(isPlaying = false) {
+    if (isPlaying) {
+      this.elements.resumeReadingBtn.classList.add('hidden');
+      return;
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'hasLastPosition' });
+      if (response && response.hasPosition) {
+        this.elements.resumeReadingBtn.classList.remove('hidden');
+        this.elements.resumeReadingBtn.disabled = false;
+      } else {
+        this.elements.resumeReadingBtn.classList.add('hidden');
+      }
+    } catch (error) {
+      console.error('Check last position error:', error);
+      this.elements.resumeReadingBtn.classList.add('hidden');
+    }
+  }
+
+  async resumeReading() {
+    this.clearMessages();
+
+    try {
+      this.elements.resumeReadingBtn.disabled = true;
+
+      const response = await chrome.runtime.sendMessage({ action: 'resumeReading' });
+
+      if (!response || !response.success) {
+        throw new Error(response?.error || 'Failed to resume reading');
+      }
+
+      await this.checkLastPosition();
+    } catch (error) {
+      console.error('Resume reading error:', error);
+      this.showError(error.message);
+      this.elements.resumeReadingBtn.disabled = false;
+    }
   }
 }
 

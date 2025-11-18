@@ -8,12 +8,14 @@ export class StateManager {
       isPaused: false,
       tabId: null,
       extractedText: '',
+      extractedTextOffset: 0,
       settings: {
         apiKey: '',
         voice: 'alloy',
         speed: 1.0
       }
     };
+    this.lastStopPosition = null;
   }
 
   getState() {
@@ -34,23 +36,60 @@ export class StateManager {
   }
 
   startPlayback(data) {
-    const { text, apiKey, voice, speed, tabId, chunks, positions } = data;
+    const { text, apiKey, voice, speed, tabId, chunks, positions, extractedTextOffset = 0 } = data;
 
     this.state.settings = { apiKey, voice, speed };
     this.state.tabId = tabId;
     this.state.extractedText = text;
+    this.state.extractedTextOffset = extractedTextOffset;
     this.state.chunks = chunks;
     this.state.chunkPositions = positions;
     this.state.currentChunkIndex = 0;
     this.state.isPlaying = true;
     this.state.isPaused = false;
+
+    this.lastStopPosition = null;
   }
 
   stop() {
+    if (this.state.chunks.length > 0 && this.state.currentChunkIndex < this.state.chunks.length) {
+      this.lastStopPosition = {
+        chunkIndex: this.state.currentChunkIndex,
+        extractedText: this.state.extractedText,
+        extractedTextOffset: this.state.extractedTextOffset,
+        chunks: this.state.chunks,
+        positions: this.state.chunkPositions,
+        tabId: this.state.tabId
+      };
+    }
+
     this.state.isPlaying = false;
     this.state.isPaused = false;
     this.state.currentChunkIndex = 0;
     this.state.chunks = [];
+  }
+
+  hasLastPosition() {
+    return this.lastStopPosition !== null;
+  }
+
+  resumePlayback() {
+    if (!this.lastStopPosition) return false;
+
+    const { chunkIndex, extractedText, extractedTextOffset, chunks, positions, tabId } = this.lastStopPosition;
+
+    this.state.extractedText = extractedText;
+    this.state.extractedTextOffset = extractedTextOffset || 0;
+    this.state.chunks = chunks;
+    this.state.chunkPositions = positions;
+    this.state.currentChunkIndex = chunkIndex;
+    this.state.tabId = tabId;
+    this.state.isPlaying = true;
+    this.state.isPaused = false;
+
+    this.lastStopPosition = null;
+
+    return true;
   }
 
   pause() {

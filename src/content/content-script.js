@@ -1,8 +1,7 @@
 console.log('[TTS Content Script] Loaded on:', window.location.href);
 
 let currentHighlight = null;
-let cachedNodeMap = null;
-let cachedCombinedText = null;
+let pageContext = null;
 
 injectHighlightStyles();
 
@@ -11,21 +10,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'extractText') {
     try {
+      clearPageContext();
       const text = extractPageText();
       console.log('[TTS Content Script] Extracted text length:', text.length);
-      cachedNodeMap = null;
-      cachedCombinedText = null;
       sendResponse({ success: true, text });
     } catch (error) {
       console.error('[TTS Content Script] Error extracting text:', error);
       sendResponse({ success: false, error: error.message });
     }
-    return false; // sync operation
+    return false;
   }
 
   if (message.action === 'highlightText') {
     try {
-      highlightText(message.extractedText, message.start, message.end);
+      highlightText(
+        message.extractedText,
+        message.extractedTextOffset || 0,
+        message.start,
+        message.end
+      );
       sendResponse({ success: true });
     } catch (error) {
       console.error('[TTS Content Script] Error highlighting text:', error);
@@ -42,10 +45,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.error('[TTS Content Script] Error clearing highlight:', error);
       sendResponse({ success: false, error: error.message });
     }
-    return false; // sync operation
+    return false;
   }
 
-  return false; // default
+  if (message.action === 'getSelectionPosition') {
+    try {
+      const position = getSelectionPosition();
+      sendResponse({ success: true, position });
+    } catch (error) {
+      console.error('[TTS Content Script] Error getting selection position:', error);
+      sendResponse({ success: false, error: error.message });
+    }
+    return false;
+  }
+
+  return false;
 });
 
 function injectHighlightStyles() {
@@ -59,8 +73,8 @@ function injectHighlightStyles() {
   document.head.appendChild(style);
 }
 
-function extractPageText() {
-  const siteSelectors = [
+function findContentElement() {
+  const selectors = [
     '.ReadTextContainerIn',
     '.reader-content',
     '.text-content',
@@ -71,217 +85,172 @@ function extractPageText() {
     '[itemprop="articleBody"]',
     'article',
     '[role="main"]',
-    'main',
-    'body'
+    'main'
   ];
 
-  let contentElement = null;
-
-  for (const selector of siteSelectors) {
-    contentElement = document.querySelector(selector);
-    if (contentElement) {
-      const textLength = contentElement.innerText.trim().length;
-      if (textLength > 100) {
-        console.log('[TTS Content Script] Found content:', selector);
-        break;
-      }
-      contentElement = null;
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (element && element.innerText.trim().length > 100) {
+      console.log('[TTS Content Script] Found content:', selector);
+      return element;
     }
   }
 
-  if (!contentElement) {
-    contentElement = document.body;
-  }
-
-  const text = extractTextFromElement(contentElement);
-  return cleanText(text);
+  return document.body;
 }
 
-function extractTextFromElement(element) {
-  const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'NAV', 'HEADER', 'FOOTER', 'ASIDE'];
-  const excludeClasses = ['menu', 'navigation', 'nav', 'sidebar', 'ads', 'advertisement', 'social', 'share', 'comments'];
-
-  let text = '';
-
-  for (const node of element.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      text += node.textContent;
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      if (excludeTags.includes(node.tagName)) continue;
-
-      if (node.className && typeof node.className === 'string') {
-        const hasExcludedClass = excludeClasses.some(excludeClass =>
-          node.className.toLowerCase().includes(excludeClass)
-        );
-        if (hasExcludedClass) continue;
-      }
-
-      if (node.style && node.style.display === 'none') continue;
-      if (node.style && node.style.visibility === 'hidden') continue;
-
-      if (isBlockElement(node)) text += '\n';
-      text += extractTextFromElement(node);
-      if (isBlockElement(node)) text += '\n';
-    }
+function buildPageContext() {
+  if (pageContext) {
+    return pageContext;
   }
 
+  const contentElement = findContentElement();
+
+  const excludeTags = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'NAV', 'HEADER', 'FOOTER', 'ASIDE']);
+
+  const walker = document.createTreeWalker(
+    contentElement,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: function(node) {
+        if (!node.parentElement) return NodeFilter.FILTER_REJECT;
+        if (excludeTags.has(node.parentElement.tagName)) return NodeFilter.FILTER_REJECT;
+        if (node.textContent.trim().length === 0) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+
+  const nodeMap = [];
+  let text = '';
+  let node;
+
+  while ((node = walker.nextNode())) {
+    const start = text.length;
+    const nodeText = node.textContent;
+    text += nodeText;
+    nodeMap.push({ node, start, end: start + nodeText.length });
+  }
+
+  text = cleanText(text);
+
+  pageContext = { contentElement, nodeMap, text };
+  console.log('[TTS Content Script] Built page context:', { textLength: text.length, nodes: nodeMap.length });
+
+  return pageContext;
+}
+
+function clearPageContext() {
+  pageContext = null;
+}
+
+function cleanText(text) {
+  return text
+    .replace(/\n\s*\n\s*\n+/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+function extractPageText() {
+  const { text } = buildPageContext();
   return text;
 }
 
-function isBlockElement(element) {
-  const blockTags = ['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'PRE'];
-  return blockTags.includes(element.tagName);
+function clearHighlight() {
+  if (currentHighlight) {
+    CSS.highlights.delete('tts-current');
+    currentHighlight = null;
+  }
 }
 
-function buildTextNodesMap() {
-  if (cachedNodeMap && cachedCombinedText) {
-    return { nodeMap: cachedNodeMap, combinedText: cachedCombinedText };
-  }
-
-  document.body.normalize();
-
-  const walker = document.createTreeWalker(
-    document.body,
-    NodeFilter.SHOW_TEXT,
-    null,
-    false
-  );
-
-  let textNodes = [];
-  let node;
-  while (node = walker.nextNode()) {
-    if (node.parentElement && (
-      node.parentElement.tagName === 'SCRIPT' ||
-      node.parentElement.tagName === 'STYLE' ||
-      node.parentElement.tagName === 'NOSCRIPT'
-    )) {
-      continue;
-    }
-    textNodes.push(node);
-  }
-
-  let combinedText = '';
-  let nodeMap = [];
-
-  for (const textNode of textNodes) {
-    const start = combinedText.length;
-    const text = textNode.textContent;
-    combinedText += text;
-    nodeMap.push({ node: textNode, start, end: start + text.length });
-  }
-
-  cachedNodeMap = nodeMap;
-  cachedCombinedText = combinedText;
-
-  return { nodeMap, combinedText };
-}
-
-function highlightText(extractedText, startPos, endPos) {
+function highlightText(extractedText, extractedTextOffset, startPos, endPos) {
   clearHighlight();
 
-  const { nodeMap, combinedText } = buildTextNodesMap();
+  const { nodeMap } = buildPageContext();
 
-  const textToHighlight = extractedText.substring(startPos, endPos);
-  const normalizedCombined = normalizeText(combinedText);
-  const normalizedTarget = normalizeText(textToHighlight);
+  const absoluteStart = extractedTextOffset + startPos;
+  const absoluteEnd = extractedTextOffset + endPos;
 
-  let matchIndex = normalizedCombined.indexOf(normalizedTarget);
-
-  if (matchIndex === -1) {
-    console.warn('[TTS] Text not found:', textToHighlight.substring(0, 50));
-    return;
-  }
-
-  const matchStartNorm = matchIndex;
-  const matchEndNorm = matchStartNorm + normalizedTarget.length;
-
-  const matchStart = findOriginalPosition(combinedText, normalizedCombined, matchStartNorm);
-  const matchEnd = findOriginalPosition(combinedText, normalizedCombined, matchEndNorm);
-
-  const ranges = createRanges(nodeMap, matchStart, matchEnd);
+  const ranges = createRanges(nodeMap, absoluteStart, absoluteEnd);
 
   if (ranges.length === 0) {
+    console.warn('[TTS] Could not create ranges for positions:', { absoluteStart, absoluteEnd });
     return;
   }
 
   const highlight = new Highlight(...ranges);
   CSS.highlights.set('tts-current', highlight);
-
   currentHighlight = { highlight, ranges };
 
   scrollToRange(ranges[0]);
 }
 
-function createRanges(nodeMap, matchStart, matchEnd) {
-  const affectedNodes = nodeMap.filter(item =>
-    (item.start < matchEnd && item.end > matchStart)
-  );
-
+function createRanges(nodeMap, start, end) {
   const ranges = [];
 
-  for (const item of affectedNodes) {
-    const nodeStart = Math.max(0, matchStart - item.start);
-    const nodeEnd = Math.min(item.node.textContent.length, matchEnd - item.start);
+  for (const { node, start: nodeStart, end: nodeEnd } of nodeMap) {
+    if (nodeEnd <= start || nodeStart >= end) {
+      continue;
+    }
 
-    if (nodeEnd <= nodeStart) continue;
+    const range = document.createRange();
+    const rangeStart = Math.max(0, start - nodeStart);
+    const rangeEnd = Math.min(node.textContent.length, end - nodeStart);
 
-    const range = new Range();
-    range.setStart(item.node, nodeStart);
-    range.setEnd(item.node, nodeEnd);
-    ranges.push(range);
+    try {
+      range.setStart(node, rangeStart);
+      range.setEnd(node, rangeEnd);
+      ranges.push(range);
+    } catch (error) {
+      console.error('[TTS] Error creating range:', error);
+    }
   }
 
   return ranges;
 }
 
 function scrollToRange(range) {
-  const rect = range.getBoundingClientRect();
-  const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+  try {
+    const rect = range.getBoundingClientRect();
+    const offset = window.innerHeight / 3;
 
-  if (!isVisible) {
-    range.startContainer.parentElement?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center'
+    window.scrollTo({
+      top: window.scrollY + rect.top - offset,
+      behavior: 'smooth'
     });
+  } catch (error) {
+    console.error('[TTS] Error scrolling to range:', error);
   }
 }
 
-function clearHighlight() {
-  if (!currentHighlight) return;
-  CSS.highlights.delete('tts-current');
-  currentHighlight = null;
-}
+function getSelectionPosition() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.toString().trim().length === 0) {
+    return null;
+  }
 
-function cleanText(text) {
-  return text
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]+/g, ' ')
-    .trim();
-}
+  const range = selection.getRangeAt(0);
+  const { nodeMap } = buildPageContext();
 
-function normalizeText(text) {
-  return text
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function findOriginalPosition(original, normalized, normalizedPos) {
-  let origPos = 0;
-  let normPos = 0;
-
-  while (normPos < normalizedPos && origPos < original.length) {
-    const origChar = original[origPos];
-    const normChar = origChar.replace(/\s+/g, ' ').toLowerCase();
-
-    if (normChar === normalized[normPos]) {
-      normPos++;
+  for (const { node, start } of nodeMap) {
+    if (node === range.startContainer) {
+      return start + range.startOffset;
     }
 
-    origPos++;
+    if (node.contains && node.contains(range.startContainer)) {
+      let offset = range.startOffset;
+      let currentNode = range.startContainer;
+
+      while (currentNode !== node && currentNode.previousSibling) {
+        currentNode = currentNode.previousSibling;
+        offset += currentNode.textContent ? currentNode.textContent.length : 0;
+      }
+
+      return start + offset;
+    }
   }
 
-  return origPos;
+  return null;
 }
 
 console.log('[TTS Content Script] Ready');
