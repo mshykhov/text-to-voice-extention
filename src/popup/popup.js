@@ -152,6 +152,9 @@ class TTSPopup {
       case 'reset-key':
         this.showApiKeyInput();
         break;
+      case 'open-options':
+        chrome.runtime.openOptionsPage();
+        break;
     }
   }
 

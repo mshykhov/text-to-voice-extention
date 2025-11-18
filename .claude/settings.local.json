@@ -10,7 +10,12 @@
       "mcp__context7__get-library-docs",
       "mcp__sequential-thinking__sequentialthinking_tools",
       "Bash(node:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "mcp__memory__aim_create_entities",
+      "mcp__memory__aim_create_relations",
+      "mcp__memory__aim_add_observations",
+      "WebSearch",
+      "Bash(tar -czf:*)"
     ],
     "deny": [],
     "ask": []

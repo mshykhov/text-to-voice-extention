@@ -218,10 +218,8 @@ function extractPageText() {
 }
 
 function clearHighlight() {
-  if (currentHighlight) {
-    CSS.highlights.delete('tts-current');
-    currentHighlight = null;
-  }
+  CSS.highlights.delete('tts-current');
+  currentHighlight = null;
 }
 
 function highlightText(extractedText, extractedTextOffset, startPos, endPos) {
@@ -335,9 +333,46 @@ async function playAudio(audioDataArray) {
       reject(new Error('Playback failed'));
     };
 
+    setupMediaSession();
+
     currentAudio.play()
-      .then(() => resolve())
+      .then(() => {
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+        resolve();
+      })
       .catch(reject);
+  });
+}
+
+function setupMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: document.title || 'Text to Speech',
+    artist: 'TTS Extension',
+    album: window.location.hostname
+  });
+
+  navigator.mediaSession.setActionHandler('play', () => {
+    chrome.runtime.sendMessage({ action: 'resume' }).catch(() => {});
+  });
+
+  navigator.mediaSession.setActionHandler('pause', () => {
+    chrome.runtime.sendMessage({ action: 'pause' }).catch(() => {});
+  });
+
+  navigator.mediaSession.setActionHandler('previoustrack', () => {
+    chrome.runtime.sendMessage({ action: 'previousChunk' }).catch(() => {});
+  });
+
+  navigator.mediaSession.setActionHandler('nexttrack', () => {
+    chrome.runtime.sendMessage({ action: 'nextChunk' }).catch(() => {});
+  });
+
+  navigator.mediaSession.setActionHandler('stop', () => {
+    chrome.runtime.sendMessage({ action: 'stop' }).catch(() => {});
   });
 }
 
@@ -355,11 +390,19 @@ function stopAudio() {
   }
 
   currentAudio = null;
+
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = 'none';
+  }
 }
 
 function pauseAudio() {
   if (currentAudio) {
     currentAudio.pause();
+
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }
 }
 
@@ -368,6 +411,10 @@ async function resumeAudio() {
     throw new Error('No audio to resume');
   }
   await currentAudio.play();
+
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = 'playing';
+  }
 }
 
 console.log('[TTS Content Script] Ready');

@@ -3,6 +3,9 @@
  * Manages API key configuration and validation
  */
 
+import { detectPlatform, getRecommendedPrefetchStrategy } from '../utils/platform-detector.js';
+import { PREFETCH_STRATEGIES } from '../config/constants.js';
+
 class OptionsController {
   constructor() {
     this.elements = {};
@@ -12,7 +15,9 @@ class OptionsController {
   async init() {
     this.cacheElements();
     this.setupEventListeners();
+    this.detectAndDisplayPlatform();
     await this.loadApiKey();
+    await this.loadPrefetchStrategy();
   }
 
   cacheElements() {
@@ -23,7 +28,11 @@ class OptionsController {
       validateBtn: document.getElementById('validate-btn'),
       clearBtn: document.getElementById('clear-btn'),
       errorMessage: document.getElementById('error-message'),
-      successMessage: document.getElementById('success-message')
+      successMessage: document.getElementById('success-message'),
+      prefetchStrategySelect: document.getElementById('prefetch-strategy'),
+      savePerformanceBtn: document.getElementById('save-performance-btn'),
+      platformInfo: document.getElementById('platform-info'),
+      recommendedStrategy: document.getElementById('recommended-strategy')
     };
   }
 
@@ -32,6 +41,7 @@ class OptionsController {
     this.elements.validateBtn.addEventListener('click', () => this.handleValidate());
     this.elements.clearBtn.addEventListener('click', () => this.handleClear());
     this.elements.toggleVisibilityBtn.addEventListener('click', () => this.toggleVisibility());
+    this.elements.savePerformanceBtn.addEventListener('click', () => this.handleSavePerformance());
 
     // Save on Enter key
     this.elements.apiKeyInput.addEventListener('keypress', (e) => {
@@ -160,6 +170,52 @@ class OptionsController {
   clearMessages() {
     this.elements.errorMessage.classList.add('hidden');
     this.elements.successMessage.classList.add('hidden');
+  }
+
+  detectAndDisplayPlatform() {
+    const platform = detectPlatform();
+    const recommended = getRecommendedPrefetchStrategy();
+
+    let platformText = 'Desktop';
+    if (platform.isIOS) platformText = 'iOS';
+    else if (platform.isAndroid) platformText = 'Android';
+    else if (platform.isMobile) platformText = 'Mobile';
+
+    this.elements.platformInfo.textContent = platformText;
+
+    const strategy = PREFETCH_STRATEGIES[recommended.toUpperCase()];
+    this.elements.recommendedStrategy.textContent = strategy.label;
+  }
+
+  async loadPrefetchStrategy() {
+    try {
+      const { prefetchStrategy } = await chrome.storage.sync.get('prefetchStrategy');
+      const strategy = prefetchStrategy || getRecommendedPrefetchStrategy();
+
+      this.elements.prefetchStrategySelect.value = strategy;
+    } catch (error) {
+      console.error('Error loading prefetch strategy:', error);
+    }
+  }
+
+  async handleSavePerformance() {
+    this.clearMessages();
+
+    const prefetchStrategy = this.elements.prefetchStrategySelect.value;
+
+    try {
+      await chrome.storage.sync.set({ prefetchStrategy });
+
+      await chrome.runtime.sendMessage({
+        action: 'updatePrefetchStrategy',
+        data: { prefetchStrategy }
+      });
+
+      this.showSuccess('Performance settings saved successfully!');
+    } catch (error) {
+      console.error('Error saving performance settings:', error);
+      this.showError('Failed to save performance settings: ' + error.message);
+    }
   }
 }
 

@@ -1,12 +1,14 @@
-import { DEFAULT_SENTENCES_PER_CHUNK } from '../config/constants.js';
+import { DEFAULT_SENTENCES_PER_CHUNK, PREFETCH_STRATEGIES, DEFAULT_PREFETCH_STRATEGY } from '../config/constants.js';
 import { StateManager } from '../core/state-manager.js';
 import { AudioCache } from '../core/audio-cache.js';
 import { generateAudio } from '../api/openai-client.js';
 import { chunkTextBySentences } from '../utils/text-chunker.js';
+import { getRecommendedPrefetchStrategy } from '../utils/platform-detector.js';
 
 let prefetchAbortController = new AbortController();
 let currentPlaybackOperationId = 0;
 let prefetchInProgress = new Set();
+let currentPrefetchStrategy = null;
 
 const stateManager = new StateManager();
 const audioCache = new AudioCache();
@@ -83,6 +85,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'hasLastPosition':
       sendResponse({ hasPosition: stateManager.hasLastPosition() });
+      return false;
+
+    case 'updatePrefetchStrategy':
+      currentPrefetchStrategy = message.data.prefetchStrategy;
+      sendResponse({ success: true });
       return false;
   }
 
@@ -218,17 +225,46 @@ async function playNextChunk(operationId) {
   }
 }
 
-function prefetchAdjacentChunks(currentIndex) {
+async function prefetchAdjacentChunks(currentIndex) {
   const state = stateManager.getState();
+
+  const strategy = await getPrefetchStrategy();
+  const prefetchCount = strategy.prefetchCount;
 
   const prevIndex = currentIndex - 1;
   if (prevIndex >= 0 && !audioCache.has(prevIndex)) {
     prefetchChunk(prevIndex);
   }
 
-  const nextIndex = currentIndex + 1;
-  if (nextIndex < state.chunks.length && !audioCache.has(nextIndex)) {
-    prefetchChunk(nextIndex);
+  if (prefetchCount === Infinity) {
+    for (let i = currentIndex + 1; i < state.chunks.length; i++) {
+      if (!audioCache.has(i)) {
+        prefetchChunk(i);
+      }
+    }
+  } else {
+    for (let i = 1; i <= prefetchCount; i++) {
+      const nextIndex = currentIndex + i;
+      if (nextIndex < state.chunks.length && !audioCache.has(nextIndex)) {
+        prefetchChunk(nextIndex);
+      }
+    }
+  }
+}
+
+async function getPrefetchStrategy() {
+  if (currentPrefetchStrategy) {
+    return PREFETCH_STRATEGIES[currentPrefetchStrategy.toUpperCase()];
+  }
+
+  try {
+    const { prefetchStrategy } = await chrome.storage.sync.get('prefetchStrategy');
+    const strategyId = prefetchStrategy || getRecommendedPrefetchStrategy();
+    currentPrefetchStrategy = strategyId;
+    return PREFETCH_STRATEGIES[strategyId.toUpperCase()];
+  } catch (error) {
+    console.error('Error loading prefetch strategy:', error);
+    return PREFETCH_STRATEGIES[DEFAULT_PREFETCH_STRATEGY.toUpperCase()];
   }
 }
 
@@ -374,37 +410,39 @@ async function handleReadFromSelection(data) {
   await playNextChunk(operationId);
 }
 
+async function extractAndStartReading(tabId) {
+  const [textResponse, positionResponse] = await Promise.all([
+    chrome.tabs.sendMessage(tabId, { action: 'extractText' }),
+    chrome.tabs.sendMessage(tabId, { action: 'getSelectionPosition' })
+  ]);
+
+  if (!textResponse?.success || !textResponse.text) {
+    throw new Error('Could not extract text');
+  }
+
+  const settings = await chrome.storage.sync.get(['apiKey', 'voice', 'speed']);
+
+  if (!settings.apiKey) {
+    throw new Error('No API key found');
+  }
+
+  await handleReadFromSelection({
+    selectionPosition: positionResponse?.position,
+    text: textResponse.text,
+    apiKey: settings.apiKey,
+    voice: settings.voice || 'alloy',
+    speed: settings.speed || 1.0,
+    tabId
+  });
+}
+
 async function handleContextMenuClick(info, tab) {
   if (info.menuItemId !== 'read-from-here' || !info.selectionText) return;
 
   try {
-    const [textResponse, positionResponse] = await Promise.all([
-      chrome.tabs.sendMessage(tab.id, { action: 'extractText' }),
-      chrome.tabs.sendMessage(tab.id, { action: 'getSelectionPosition' })
-    ]);
-
-    if (!textResponse?.success || !textResponse.text) {
-      console.error('Could not extract text');
-      return;
-    }
-
-    const settings = await chrome.storage.sync.get(['apiKey', 'voice', 'speed']);
-
-    if (!settings.apiKey) {
-      console.error('No API key found');
-      return;
-    }
-
-    await handleReadFromSelection({
-      selectionPosition: positionResponse?.position,
-      text: textResponse.text,
-      apiKey: settings.apiKey,
-      voice: settings.voice || 'alloy',
-      speed: settings.speed || 1.0,
-      tabId: tab.id
-    });
+    await extractAndStartReading(tab.id);
   } catch (error) {
-    console.error('Read from selection error:', error);
+    console.error('Context menu error:', error);
   }
 }
 
@@ -417,3 +455,16 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.contextMenus.onClicked.addListener(handleContextMenuClick);
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'read-from-here') {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) return;
+
+    try {
+      await extractAndStartReading(tab.id);
+    } catch (error) {
+      console.error('Keyboard shortcut error:', error);
+    }
+  }
+});
