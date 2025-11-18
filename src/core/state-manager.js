@@ -105,7 +105,7 @@ export class StateManager {
   }
 
   nextChunk() {
-    if (this.state.currentChunkIndex < this.state.chunks.length - 1) {
+    if (this.state.currentChunkIndex < this.state.chunks.length) {
       this.state.currentChunkIndex++;
       this.state.isPaused = false;
       return true;
