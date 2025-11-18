@@ -1,8 +1,3 @@
-/**
- * Popup Controller - Pure UI Layer
- * Service Worker is the single source of truth
- */
-
 class TTSPopup {
   constructor() {
     this.apiKey = '';
@@ -14,8 +9,6 @@ class TTSPopup {
     this.setupEventListeners();
     await this.loadApiKey();
     await this.loadSettings();
-
-    // Request initial state from service worker
     this.requestStateUpdate();
   }
 
@@ -23,18 +16,26 @@ class TTSPopup {
     this.elements = {
       apiKeySection: document.getElementById('api-key-section'),
       settingsSection: document.getElementById('settings-section'),
+      controlsSection: document.getElementById('controls-section'),
+      statusBar: document.getElementById('status-bar'),
+      statusIndicator: document.getElementById('status-indicator'),
+      statusSettings: document.getElementById('status-settings'),
+      settingsIcon: document.getElementById('settings-icon'),
+      settingsMenu: document.getElementById('settings-menu'),
       apiKeyInput: document.getElementById('api-key-input'),
       saveKeyBtn: document.getElementById('save-key-btn'),
       voiceSelect: document.getElementById('voice-select'),
-      speedSlider: document.getElementById('speed-slider'),
-      speedValue: document.getElementById('speed-value'),
+      speedSelect: document.getElementById('speed-select'),
       startBtn: document.getElementById('start-btn'),
       pauseBtn: document.getElementById('pause-btn'),
       resumeBtn: document.getElementById('resume-btn'),
       stopBtn: document.getElementById('stop-btn'),
       prevBtn: document.getElementById('prev-btn'),
       nextBtn: document.getElementById('next-btn'),
-      navControls: document.getElementById('nav-controls'),
+      playbackControls: document.getElementById('playback-controls'),
+      progressContainer: document.getElementById('progress-container'),
+      progressFill: document.getElementById('progress-fill'),
+      progressText: document.getElementById('progress-text'),
       errorMessage: document.getElementById('error-message'),
       successMessage: document.getElementById('success-message')
     };
@@ -42,6 +43,10 @@ class TTSPopup {
 
   setupEventListeners() {
     this.elements.saveKeyBtn.addEventListener('click', () => this.saveApiKey());
+    this.elements.settingsIcon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleSettingsMenu();
+    });
     this.elements.startBtn.addEventListener('click', () => this.startReading());
     this.elements.pauseBtn.addEventListener('click', () => this.pause());
     this.elements.resumeBtn.addEventListener('click', () => this.resume());
@@ -49,14 +54,24 @@ class TTSPopup {
     this.elements.prevBtn.addEventListener('click', () => this.previousChunk());
     this.elements.nextBtn.addEventListener('click', () => this.nextChunk());
 
-    // Auto-save settings
-    this.elements.voiceSelect.addEventListener('change', () => this.saveSettings());
-    this.elements.speedSlider.addEventListener('input', () => {
-      this.elements.speedValue.textContent = `${this.elements.speedSlider.value}x`;
+    this.elements.voiceSelect.addEventListener('change', () => {
+      this.saveSettings();
+      this.updateStatusBar();
     });
-    this.elements.speedSlider.addEventListener('change', () => this.saveSettings());
+    this.elements.speedSelect.addEventListener('change', () => {
+      this.saveSettings();
+      this.updateStatusBar();
+    });
 
-    // Listen for state changes from service worker
+    document.querySelectorAll('.menu-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        const action = e.target.closest('.menu-item').dataset.action;
+        this.handleMenuAction(action);
+      });
+    });
+
+    document.addEventListener('click', () => this.closeSettingsMenu());
+
     chrome.runtime.onMessage.addListener((message) => {
       if (message.action === 'stateChanged' && message.state) {
         this.updateUIFromState(message.state);
@@ -70,8 +85,7 @@ class TTSPopup {
       if (data.apiKey) {
         this.apiKey = data.apiKey;
         this.elements.apiKeyInput.value = data.apiKey;
-        this.elements.apiKeySection.classList.add('hidden');
-        this.elements.settingsSection.classList.remove('hidden');
+        this.showMainUI();
       }
     } catch (error) {
       console.error('Error loading API key:', error);
@@ -95,10 +109,46 @@ class TTSPopup {
       await chrome.storage.sync.set({ apiKey });
       this.apiKey = apiKey;
       this.showSuccess('API key saved!');
-      this.elements.apiKeySection.classList.add('hidden');
-      this.elements.settingsSection.classList.remove('hidden');
+      this.showMainUI();
     } catch (error) {
       this.showError('Failed to save API key');
+    }
+  }
+
+  showApiKeyInput() {
+    this.elements.apiKeySection.classList.remove('hidden');
+    this.elements.settingsSection.classList.add('hidden');
+    this.elements.controlsSection.classList.add('hidden');
+    this.elements.settingsIcon.classList.add('hidden');
+    this.elements.statusBar.classList.add('hidden');
+    this.elements.apiKeyInput.value = '';
+    this.elements.apiKeyInput.focus();
+  }
+
+  showMainUI() {
+    this.elements.apiKeySection.classList.add('hidden');
+    this.elements.settingsSection.classList.remove('hidden');
+    this.elements.controlsSection.classList.remove('hidden');
+    this.elements.settingsIcon.classList.remove('hidden');
+    this.elements.statusBar.classList.remove('hidden');
+    this.updateStatusBar();
+  }
+
+  toggleSettingsMenu() {
+    this.elements.settingsMenu.classList.toggle('hidden');
+  }
+
+  closeSettingsMenu() {
+    this.elements.settingsMenu.classList.add('hidden');
+  }
+
+  handleMenuAction(action) {
+    this.closeSettingsMenu();
+
+    switch (action) {
+      case 'reset-key':
+        this.showApiKeyInput();
+        break;
     }
   }
 
@@ -111,16 +161,16 @@ class TTSPopup {
 
       const data = await chrome.storage.sync.get(['voice', 'speed']);
       const voice = data.voice || defaults.voice;
-      const speed = data.speed || defaults.speed;
+      const speed = data.speed !== undefined ? data.speed : defaults.speed;
 
       this.elements.voiceSelect.value = voice;
-      this.elements.speedSlider.value = speed;
-      this.elements.speedValue.textContent = `${speed}x`;
+      this.elements.speedSelect.value = speed.toString();
 
-      // Save defaults if needed
-      if (!data.voice || !data.speed) {
-        await this.saveSettings();
+      if (data.voice === undefined || data.speed === undefined) {
+        await chrome.storage.sync.set({ voice, speed });
       }
+
+      this.updateStatusBar();
     } catch (error) {
       console.error('Error loading settings:', error);
     }
@@ -128,20 +178,23 @@ class TTSPopup {
 
   async saveSettings() {
     try {
-      await chrome.storage.sync.set({
-        voice: this.elements.voiceSelect.value,
-        speed: parseFloat(this.elements.speedSlider.value)
-      });
+      const voice = this.elements.voiceSelect.value;
+      const speed = parseFloat(this.elements.speedSelect.value);
+
+      await chrome.storage.sync.set({ voice, speed });
+
+      chrome.runtime.sendMessage({
+        action: 'updateSettings',
+        voice,
+        speed
+      }).catch(() => {});
     } catch (error) {
       console.error('Error saving settings:', error);
     }
   }
 
-  // Request state update from service worker
   requestStateUpdate() {
-    chrome.runtime.sendMessage({ action: 'getState' }).catch(() => {
-      // Service worker might be starting, ignore errors
-    });
+    chrome.runtime.sendMessage({ action: 'getState' }).catch(() => {});
   }
 
   updateUIFromState(state) {
@@ -149,22 +202,51 @@ class TTSPopup {
 
     const { isPlaying, isPaused, currentChunkIndex, totalChunks } = state;
 
-    // Reset start button
     this.elements.startBtn.disabled = false;
     this.elements.startBtn.textContent = '▶ Read Page';
 
-    // Update button visibility
     this.elements.startBtn.classList.toggle('hidden', isPlaying);
-    this.elements.pauseBtn.classList.toggle('hidden', !isPlaying || isPaused);
-    this.elements.resumeBtn.classList.toggle('hidden', !isPlaying || !isPaused);
-    this.elements.stopBtn.classList.toggle('hidden', !isPlaying);
-    this.elements.navControls.classList.toggle('hidden', !isPlaying);
+    this.elements.playbackControls.classList.toggle('hidden', !isPlaying);
+    this.elements.progressContainer.classList.toggle('hidden', !isPlaying);
+    this.elements.pauseBtn.classList.toggle('hidden', isPaused);
+    this.elements.resumeBtn.classList.toggle('hidden', !isPaused);
 
-    // Update navigation buttons
     if (totalChunks > 0) {
       this.elements.prevBtn.disabled = currentChunkIndex === 0;
       this.elements.nextBtn.disabled = currentChunkIndex >= totalChunks - 1;
+
+      const current = currentChunkIndex + 1;
+      this.elements.progressText.textContent = `${current} / ${totalChunks}`;
+      const progress = (current / totalChunks) * 100;
+      this.elements.progressFill.style.width = `${progress}%`;
     }
+
+    this.updateStatusIndicator(isPlaying, isPaused);
+  }
+
+  updateStatusIndicator(isPlaying, isPaused) {
+    this.elements.statusIndicator.className = 'status-indicator';
+
+    if (isPlaying && isPaused) {
+      this.elements.statusIndicator.textContent = '● Paused';
+      this.elements.statusIndicator.classList.add('paused');
+    } else if (isPlaying) {
+      this.elements.statusIndicator.textContent = '● Playing';
+      this.elements.statusIndicator.classList.add('playing');
+    } else {
+      this.elements.statusIndicator.textContent = '● Ready';
+      this.elements.statusIndicator.classList.add('ready');
+    }
+  }
+
+  updateStatusBar() {
+    const voice = this.elements.voiceSelect.value;
+    const speed = this.elements.speedSelect.value;
+
+    const voiceName = voice.charAt(0).toUpperCase() + voice.slice(1);
+    const speedValue = parseFloat(speed);
+    const speedDisplay = speedValue % 1 === 0 ? `${speedValue}.0` : speed;
+    this.elements.statusSettings.textContent = `${voiceName} ${speedDisplay}x`;
   }
 
   async startReading() {
@@ -172,19 +254,15 @@ class TTSPopup {
 
     if (!this.apiKey) {
       this.showError('Please enter and save your API key first');
-      this.elements.apiKeySection.classList.remove('hidden');
-      this.elements.settingsSection.classList.add('hidden');
+      this.showApiKeyInput();
       return;
     }
 
     try {
       this.elements.startBtn.disabled = true;
-      this.elements.startBtn.textContent = 'Extracting text...';
+      this.elements.startBtn.textContent = 'Loading...';
 
-      // Get active tab
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      // Extract text from page
       const response = await chrome.tabs.sendMessage(tab.id, { action: 'extractText' });
 
       if (!response || !response.success || !response.text) {
@@ -196,15 +274,14 @@ class TTSPopup {
         throw new Error('Not enough text found on this page');
       }
 
-      // Send to service worker
       const startResponse = await chrome.runtime.sendMessage({
         action: 'startReading',
         data: {
           text,
           apiKey: this.apiKey,
           voice: this.elements.voiceSelect.value,
-          speed: parseFloat(this.elements.speedSlider.value),
-          tabId: tab.id // Pass tab ID for highlighting
+          speed: parseFloat(this.elements.speedSelect.value),
+          tabId: tab.id
         }
       });
 
@@ -258,5 +335,4 @@ class TTSPopup {
   }
 }
 
-// Initialize popup
 new TTSPopup();

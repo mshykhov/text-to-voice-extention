@@ -8,71 +8,80 @@
 </head>
 <body>
   <div class="container">
-    <header>
-      <h1>🔊 Text-to-Voice</h1>
-    </header>
+    <div id="status-bar" class="status-bar hidden">
+      <span id="status-indicator" class="status-indicator">● Ready</span>
+      <span id="status-settings" class="status-settings">Alloy 1x</span>
+    </div>
+    <button id="settings-icon" class="settings-icon hidden" title="Settings">⚙️</button>
+    <div id="settings-menu" class="settings-menu hidden">
+      <button class="menu-item" data-action="reset-key">🔑 Reset API Key</button>
+    </div>
 
-    <div id="error-message" class="error hidden"></div>
-    <div id="success-message" class="success hidden"></div>
-
-    <!-- API Key Section (collapsible when saved) -->
-    <div id="api-key-section" class="api-key-section">
+    <div id="api-key-section" class="section">
       <div class="input-group">
         <input
           type="password"
           id="api-key-input"
-          placeholder="Enter OpenAI API Key..."
+          placeholder="OpenAI API Key"
           autocomplete="off"
         >
-        <button id="save-key-btn" class="btn-small">Save</button>
+        <button id="save-key-btn" class="btn-icon" title="Save API Key">💾</button>
       </div>
-      <p class="help-text">
-        <a href="https://platform.openai.com/api-keys" target="_blank">Get API key</a>
-      </p>
+      <a href="https://platform.openai.com/api-keys" target="_blank" class="link-small">Get API key</a>
     </div>
 
-    <!-- Minimal Settings -->
-    <div id="settings-section" class="settings hidden">
-      <div class="setting-row">
-        <label for="voice-select">Voice</label>
-        <select id="voice-select">
-          <option value="alloy">Alloy (neutral)</option>
-          <option value="echo">Echo (male)</option>
-          <option value="nova">Nova (female)</option>
-          <option value="onyx">Onyx (deep)</option>
-          <option value="shimmer">Shimmer (soft)</option>
-        </select>
-      </div>
+    <div id="settings-section" class="section hidden">
+      <div class="settings-grid">
+        <div class="setting-item">
+          <label>Voice</label>
+          <select id="voice-select">
+            <option value="alloy">Alloy</option>
+            <option value="echo">Echo</option>
+            <option value="nova">Nova</option>
+            <option value="onyx">Onyx</option>
+            <option value="shimmer">Shimmer</option>
+          </select>
+        </div>
 
-      <div class="setting-row">
-        <label for="speed-slider">Speed</label>
-        <div class="slider-container">
-          <input
-            type="range"
-            id="speed-slider"
-            min="0.5"
-            max="2.0"
-            step="0.25"
-            value="1.0"
-            class="slider"
-          >
-          <span class="slider-value" id="speed-value">1.0x</span>
+        <div class="setting-item">
+          <label>Speed</label>
+          <select id="speed-select">
+            <option value="0.25">0.25x</option>
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1.0x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="1.75">1.75x</option>
+            <option value="2">2.0x</option>
+          </select>
         </div>
       </div>
+
     </div>
 
-    <!-- Main Control Button -->
-    <div class="controls">
-      <button id="start-btn" class="btn btn-primary">▶ Read Page</button>
-      <button id="pause-btn" class="btn btn-warning hidden">⏸ Pause</button>
-      <button id="resume-btn" class="btn btn-success hidden">▶ Resume</button>
-      <button id="stop-btn" class="btn btn-danger hidden">■ Stop</button>
+    <div id="controls-section" class="section hidden">
+      <button id="start-btn" class="btn-main">▶ Read Page</button>
+
+      <div id="playback-controls" class="playback-controls hidden">
+        <button id="prev-btn" class="btn-control" title="Previous">⏮</button>
+        <button id="pause-btn" class="btn-control" title="Pause">⏸</button>
+        <button id="resume-btn" class="btn-control hidden" title="Resume">▶</button>
+        <button id="next-btn" class="btn-control" title="Next">⏭</button>
+        <button id="stop-btn" class="btn-control" title="Stop">⏹</button>
+      </div>
+
+      <div id="progress-container" class="progress-container hidden">
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <div id="progress-text" class="progress-text">1 / 1</div>
+      </div>
     </div>
 
-    <!-- Navigation Controls -->
-    <div class="navigation-controls hidden" id="nav-controls">
-      <button id="prev-btn" class="btn-nav">⏮ Prev</button>
-      <button id="next-btn" class="btn-nav">⏭ Next</button>
+    <div id="notification-area">
+      <div id="error-message" class="notification error hidden"></div>
+      <div id="success-message" class="notification success hidden"></div>
     </div>
   </div>
 

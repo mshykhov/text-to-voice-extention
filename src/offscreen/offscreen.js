@@ -3,44 +3,37 @@ let currentAudio = null;
 chrome.runtime.sendMessage({ action: 'offscreenReady' }).catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-
-  try {
-    if (message.action === 'playAudio') {
-      if (currentAudio) {
-        stopAudio();
-      }
-
-      playAudio(message.data.audioData)
-        .then(() => sendResponse({ success: true }))
-        .catch(error => sendResponse({ success: false, error: error.message }));
-      return true;
-    }
-
-    if (message.action === 'stop') {
+  if (message.action === 'playAudio') {
+    if (currentAudio) {
       stopAudio();
-      sendResponse({ success: true, stopped: true });
-      return false;
     }
 
-    if (message.action === 'pause') {
-      pauseAudio();
-      sendResponse({ success: true, paused: true });
-      return false;
-    }
+    playAudio(message.data.audioData)
+      .then(() => sendResponse({ success: true }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
 
-    if (message.action === 'resume') {
-      resumeAudio()
-        .then(() => sendResponse({ success: true, resumed: true }))
-        .catch(error => sendResponse({ success: false, error: error.message }));
-      return true;
-    }
-
-    sendResponse({ success: false, error: 'Unknown action' });
-    return false;
-  } catch (error) {
-    sendResponse({ success: false, error: error.message });
+  if (message.action === 'stop') {
+    stopAudio();
+    sendResponse({ success: true, stopped: true });
     return false;
   }
+
+  if (message.action === 'pause') {
+    pauseAudio();
+    sendResponse({ success: true, paused: true });
+    return false;
+  }
+
+  if (message.action === 'resume') {
+    resumeAudio()
+      .then(() => sendResponse({ success: true, resumed: true }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  return false;
 });
 
 async function playAudio(audioDataArray) {

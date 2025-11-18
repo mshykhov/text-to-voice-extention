@@ -92,6 +92,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       notifyStateChange();
       return false;
 
+    case 'updateSettings':
+      stateManager.updateSettings({ voice: message.voice, speed: message.speed });
+      audioCache.clear();
+      prefetchAbortController.abort();
+      prefetchAbortController = new AbortController();
+      prefetchInProgress.clear();
+      sendResponse({ success: true });
+      return false;
+
     case 'chunkFinished':
       handleChunkFinished();
       return false;
@@ -193,7 +202,7 @@ async function playNextChunk(operationId = null) {
       if (operationId !== null && operationId !== currentPlaybackOperationId) return;
     }
 
-    prefetchNextChunks(currentIndex);
+    prefetchAdjacentChunks(currentIndex);
 
     await setupOffscreenDocument();
     const result = await sendToOffscreen({
@@ -212,14 +221,17 @@ async function playNextChunk(operationId = null) {
   }
 }
 
-function prefetchNextChunks(currentIndex) {
+function prefetchAdjacentChunks(currentIndex) {
   const state = stateManager.getState();
 
-  for (let i = 1; i <= 2; i++) {
-    const nextIndex = currentIndex + i;
-    if (nextIndex < state.chunks.length && !audioCache.has(nextIndex)) {
-      prefetchChunk(nextIndex);
-    }
+  const prevIndex = currentIndex - 1;
+  if (prevIndex >= 0 && !audioCache.has(prevIndex)) {
+    prefetchChunk(prevIndex);
+  }
+
+  const nextIndex = currentIndex + 1;
+  if (nextIndex < state.chunks.length && !audioCache.has(nextIndex)) {
+    prefetchChunk(nextIndex);
   }
 }
 

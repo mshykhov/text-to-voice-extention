@@ -49,18 +49,21 @@ runner.test('LRU cache evicts by usage time correctly', async () => {
   cache.set(1, 'chunk1');
   await sleep(10);
   cache.set(2, 'chunk2');
+  await sleep(10);
+  cache.set(3, 'chunk3');
 
-  assertEqual(cache.size, 2, 'Should have 2 items (MAX_CACHE_SIZE)');
+  assertEqual(cache.size, 3, 'Should have 3 items (MAX_CACHE_SIZE)');
 
   await sleep(10);
   cache.get(1);
 
   await sleep(10);
-  cache.set(3, 'chunk3');
+  cache.set(4, 'chunk4');
 
   assertEqual(cache.has(1), true, 'Item 1 should still be in cache (recently used)');
   assertEqual(cache.has(2), false, 'Item 2 should be evicted (least recently used)');
   assertEqual(cache.has(3), true, 'Item 3 should be in cache');
+  assertEqual(cache.has(4), true, 'Item 4 should be in cache');
 });
 
 runner.test('LRU cache handles back-navigation correctly', async () => {
@@ -69,7 +72,6 @@ runner.test('LRU cache handles back-navigation correctly', async () => {
   cache.set(0, 'audio0');
   await sleep(10);
   cache.set(1, 'audio1');
-
   await sleep(10);
   cache.set(2, 'audio2');
 
@@ -77,11 +79,20 @@ runner.test('LRU cache handles back-navigation correctly', async () => {
   cache.get(1);
 
   await sleep(10);
+  cache.set(3, 'audio3');
+
+  assertEqual(cache.has(0), false, 'Chunk 0 evicted (least recently used)');
+  assertEqual(cache.has(1), true, 'Chunk 1 should remain (recently used)');
+  assertEqual(cache.has(2), true, 'Chunk 2 should be in cache');
+  assertEqual(cache.has(3), true, 'Chunk 3 should be in cache');
+
+  await sleep(10);
   cache.set(0, 'audio0-regenerated');
 
-  assertEqual(cache.has(1), true, 'Chunk 1 should remain (recently used)');
-  assertEqual(cache.has(2), false, 'Chunk 2 evicted (least recently used)');
   assertEqual(cache.has(0), true, 'Chunk 0 back in cache');
+  assertEqual(cache.has(1), true, 'Chunk 1 should remain');
+  assertEqual(cache.has(2), false, 'Chunk 2 evicted (least recently used)');
+  assertEqual(cache.has(3), true, 'Chunk 3 should remain');
 });
 
 runner.test('LRU cache respects multiple accesses', async () => {
@@ -90,20 +101,23 @@ runner.test('LRU cache respects multiple accesses', async () => {
   cache.set('a', 1);
   await sleep(10);
   cache.set('b', 2);
-
-  await sleep(10);
-  cache.get('a');
-  await sleep(10);
-  cache.get('a');
-  await sleep(10);
-  cache.get('a');
-
   await sleep(10);
   cache.set('c', 3);
 
+  await sleep(10);
+  cache.get('a');
+  await sleep(10);
+  cache.get('a');
+  await sleep(10);
+  cache.get('a');
+
+  await sleep(10);
+  cache.set('d', 4);
+
   assertEqual(cache.has('a'), true, 'Hot item a should remain');
   assertEqual(cache.has('b'), false, 'LRU item b should be evicted');
-  assertEqual(cache.has('c'), true, 'New item c should be in cache');
+  assertEqual(cache.has('c'), true, 'Item c should be in cache');
+  assertEqual(cache.has('d'), true, 'New item d should be in cache');
 });
 
 runner.run();

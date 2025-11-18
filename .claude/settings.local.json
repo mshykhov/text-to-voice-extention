@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__github__search_repositories",
+      "mcp__github__get_file_contents",
+      "mcp__fetch__fetch",
+      "Bash(node scripts/generate-icons.js:*)",
+      "Bash(git rm:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs",
+      "mcp__sequential-thinking__sequentialthinking_tools",
+      "Bash(node:*)",
+      "Bash(mkdir:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
