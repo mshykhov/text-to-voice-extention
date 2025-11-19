@@ -17,18 +17,25 @@ Browser extension that reads any webpage aloud using OpenAI TTS API.
 
 ### Chrome/Edge/Brave
 
-1. Download or clone this repo
-2. Open `chrome://extensions/`
-3. Enable "Developer mode"
-4. Click "Load unpacked" → select folder
-5. Get API key: https://platform.openai.com/api-keys
+**Option 1: From Release (recommended)**
+1. Go to [Releases](../../releases)
+2. Download `text-to-voice-extension.zip`
+3. Unzip the file
+4. Open `chrome://extensions/`
+5. Enable "Developer mode"
+6. Click "Load unpacked" → select unzipped folder
+7. Get API key: https://platform.openai.com/api-keys
+
+**Option 2: From Source**
+1. Clone this repo
+2. Follow steps 4-7 above
 
 ### iOS Orion
 
-1. Package extension: `npm run package`
-2. Find `text-to-voice-extension.zip` in your Dropbox (ttl-extention folder)
-3. On iPhone: Open Dropbox → Share → Save to Files
-4. Orion → Extensions → Install from file
+1. Go to [Releases](../../releases)
+2. Download `text-to-voice-extension.zip` (keep zipped)
+3. Transfer to iPhone via AirDrop/Dropbox/iCloud
+4. Orion → Extensions → Install from file → select zip
 
 ## Usage
 
