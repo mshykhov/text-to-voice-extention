@@ -231,15 +231,21 @@ async function prefetchAdjacentChunks(currentIndex) {
   const strategy = await getPrefetchStrategy();
   const prefetchCount = strategy.prefetchCount;
 
+  console.log('[Prefetch] Starting prefetch for chunk', currentIndex, '- will prefetch',
+              prefetchCount === Infinity ? 'ALL' : prefetchCount, 'chunks ahead');
+
   const prevIndex = currentIndex - 1;
   if (prevIndex >= 0 && !audioCache.has(prevIndex)) {
     prefetchChunk(prevIndex);
   }
 
+  let prefetchedCount = 0;
+
   if (prefetchCount === Infinity) {
     for (let i = currentIndex + 1; i < state.chunks.length; i++) {
       if (!audioCache.has(i)) {
         prefetchChunk(i);
+        prefetchedCount++;
       }
     }
   } else {
@@ -247,23 +253,38 @@ async function prefetchAdjacentChunks(currentIndex) {
       const nextIndex = currentIndex + i;
       if (nextIndex < state.chunks.length && !audioCache.has(nextIndex)) {
         prefetchChunk(nextIndex);
+        prefetchedCount++;
       }
     }
   }
+
+  console.log('[Prefetch] Launched', prefetchedCount, 'prefetch requests');
 }
 
 async function getPrefetchStrategy() {
   if (currentPrefetchStrategy) {
-    return PREFETCH_STRATEGIES[currentPrefetchStrategy.toUpperCase()];
+    const strategy = PREFETCH_STRATEGIES[currentPrefetchStrategy.toUpperCase()];
+    console.log('[Prefetch] Using cached strategy:', currentPrefetchStrategy, 'count:', strategy.prefetchCount);
+    return strategy;
   }
 
   try {
     const { prefetchStrategy } = await chrome.storage.sync.get('prefetchStrategy');
     const strategyId = prefetchStrategy || getRecommendedPrefetchStrategy();
     currentPrefetchStrategy = strategyId;
-    return PREFETCH_STRATEGIES[strategyId.toUpperCase()];
+
+    const strategy = PREFETCH_STRATEGIES[strategyId.toUpperCase()];
+    console.log('[Prefetch] Loaded strategy:', strategyId, 'count:', strategy.prefetchCount, 'from storage:', !!prefetchStrategy);
+
+    // Save recommended strategy if not set
+    if (!prefetchStrategy) {
+      console.log('[Prefetch] Saving recommended strategy:', strategyId);
+      chrome.storage.sync.set({ prefetchStrategy: strategyId }).catch(console.error);
+    }
+
+    return strategy;
   } catch (error) {
-    console.error('Error loading prefetch strategy:', error);
+    console.error('[Prefetch] Error loading strategy:', error);
     return PREFETCH_STRATEGIES[DEFAULT_PREFETCH_STRATEGY.toUpperCase()];
   }
 }

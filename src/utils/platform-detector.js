@@ -1,25 +1,42 @@
 /**
  * Platform Detection Utility
  * Detects the user's platform (iOS/Android/Desktop) and browser
+ * Works in both content scripts and service workers
  */
 
 export function detectPlatform() {
-  const userAgent = navigator.userAgent.toLowerCase();
+  try {
+    // Use self.navigator for service worker compatibility
+    const nav = typeof self !== 'undefined' && self.navigator ? self.navigator :
+                typeof navigator !== 'undefined' ? navigator : null;
 
-  const isIOS = /iphone|ipad|ipod/.test(userAgent) ||
-                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (!nav) {
+      console.warn('[Platform Detector] Navigator not available');
+      return { isIOS: false, isAndroid: false, isMobile: false, isDesktop: true };
+    }
 
-  const isAndroid = /android/.test(userAgent);
+    const userAgent = nav.userAgent ? nav.userAgent.toLowerCase() : '';
+    const platform = nav.platform ? nav.platform : '';
+    const maxTouchPoints = nav.maxTouchPoints || 0;
 
-  const isMobile = isIOS || isAndroid ||
-                   /mobile|tablet/.test(userAgent);
+    const isIOS = /iphone|ipad|ipod/.test(userAgent) ||
+                  (platform === 'MacIntel' && maxTouchPoints > 1);
 
-  return {
-    isIOS,
-    isAndroid,
-    isMobile,
-    isDesktop: !isMobile
-  };
+    const isAndroid = /android/.test(userAgent);
+
+    const isMobile = isIOS || isAndroid ||
+                     /mobile|tablet/.test(userAgent);
+
+    return {
+      isIOS,
+      isAndroid,
+      isMobile,
+      isDesktop: !isMobile
+    };
+  } catch (error) {
+    console.error('[Platform Detector] Error:', error);
+    return { isIOS: false, isAndroid: false, isMobile: false, isDesktop: true };
+  }
 }
 
 export function getRecommendedPrefetchStrategy() {
