@@ -17,18 +17,17 @@ jobs:
 
     - name: Create extension package
       run: |
-        # Create zip with extension files
+        # Create zip with only essential extension files
         zip -r text-to-voice-extension.zip \
           manifest.json \
           src/ \
-          icons/ \
-          -x "*.git*" "*.DS_Store" "node_modules/*" "scripts/*" "tests/*"
+          icons/
 
-        # Show zip contents
+        # Show zip contents and size
         echo "Package contents:"
         unzip -l text-to-voice-extension.zip
-
-        # Show file size
+        echo ""
+        echo "Package size:"
         ls -lh text-to-voice-extension.zip
 
     - name: Upload artifact
