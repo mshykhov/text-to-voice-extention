@@ -43,19 +43,5 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: text-to-voice-extension.zip
-        body: |
-          ## Installation
-
-          ### Chrome/Edge/Brave
-          1. Download `text-to-voice-extension.zip`
-          2. Unzip the file
-          3. Open `chrome://extensions/`
-          4. Enable "Developer mode"
-          5. Click "Load unpacked" → select unzipped folder
-
-          ### iOS Orion
-          1. Download `text-to-voice-extension.zip` (keep it zipped)
-          2. Transfer to iPhone via AirDrop/Dropbox/Files
-          3. Orion → Extensions → Install from file → select the zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
